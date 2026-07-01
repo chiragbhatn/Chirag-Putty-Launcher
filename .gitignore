@@ -1,0 +1,18 @@
+# Build artifacts
+build/
+dist/
+*.spec.bak
+__pycache__/
+*.py[cod]
+
+# Local device data / inventory (never publish real network data)
+data.csv
+devices.csv
+*.data.csv
+.~lock.*
+
+# Environments / IDE
+.venv/
+venv/
+.idea/
+.env

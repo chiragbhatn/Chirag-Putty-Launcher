@@ -1,0 +1,4 @@
+hostname,ip,port
+core-telnet-01,10.1.1.1,23
+dist-ssh-01,172.16.1.1,22
+edge-ssh-01,192.168.1.1,22
