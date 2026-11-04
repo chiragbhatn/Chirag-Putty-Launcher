@@ -1,6 +1,9 @@
 # Build artifacts
 build/
 dist/
+build_netbox_release/
+installer_output/
+staged_netbox*/
 *.spec.bak
 __pycache__/
 *.py[cod]
