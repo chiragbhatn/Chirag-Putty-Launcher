@@ -25,7 +25,7 @@ UninstallDisplayName={#AppName} (NetBox)
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
 
 [Files]
-Source: "staged_netbox_v7\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "staged_netbox_final\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"

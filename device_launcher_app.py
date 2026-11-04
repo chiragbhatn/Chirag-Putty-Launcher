@@ -40,6 +40,8 @@ from tkinter import (
 
 
 APP_NAME = "Chirag Putty Launcher"
+APP_VERSION = "1.0.0"
+GITHUB_REPOSITORY = "chiragbhatn/Chirag-Putty-Launcher"
 DEFAULT_PUTTY_PATH = r"C:\Program Files\PuTTY\putty.exe"
 DEFAULT_THEME = "Slate"
 APP_THEMES = {
@@ -94,6 +96,13 @@ class Device:
     source: str = "manual"
     netbox_connection_id: str = ""
     netbox_device_id: str = ""
+    group: str = ""
+    tags: str = ""
+    notes: str = ""
+    favorite_profiles: str = ""
+    putty_session: str = ""
+    last_success: str = ""
+    reachability: str = "unknown"
 
     @property
     def protocol(self) -> str:
@@ -400,6 +409,21 @@ class ProfileStore:
         ]
         self.save()
 
+    def export_backup(self, path: Path) -> None:
+        if not self.path.exists():
+            self.save()
+        Path(path).write_text(self.path.read_text(encoding="utf-8"), encoding="utf-8")
+
+    def restore_backup(self, path: Path) -> None:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+        if not isinstance(raw, dict) or not isinstance(raw.get("profiles"), list):
+            raise ValueError("Backup does not contain launcher profiles.")
+        self.path.write_text(json.dumps(raw, indent=2), encoding="utf-8")
+        self.profiles = []
+        self.netbox_connections = []
+        self.recent_devices = []
+        self.load()
+
     def set_ui_theme(self, theme: str) -> None:
         self.ui_theme = theme if theme in APP_THEMES else DEFAULT_THEME
         self.save()
@@ -437,13 +461,38 @@ class DeviceStore:
         with self.path.open("w", newline="", encoding="utf-8") as csv_file:
             writer = csv.DictWriter(
                 csv_file,
-                fieldnames=["ip", "sysname", "port", "source", "netbox_connection_id", "netbox_device_id"],
+                fieldnames=list(Device.__dataclass_fields__),
             )
             writer.writeheader()
             for device in self.devices:
                 writer.writerow(asdict(device))
 
+    def preview_csv(self, path: Path) -> tuple[int, list[str]]:
+        """Validate an import without changing the inventory."""
+        errors: list[str] = []
+        valid = 0
+        with Path(path).open(newline="", encoding="utf-8-sig") as csv_file:
+            reader = csv.DictReader(csv_file)
+            if not reader.fieldnames:
+                return 0, ["CSV has no header row."]
+            fields = {field.lower(): field for field in reader.fieldnames}
+            ip_col, sysname_col, port_col = fields.get("ip"), fields.get("sysname") or fields.get("hostname"), fields.get("port")
+            if not ip_col or not sysname_col or not port_col:
+                return 0, ["CSV must have ip, sysname (or hostname), and port columns."]
+            for row_number, row in enumerate(reader, start=2):
+                ip, port = (row.get(ip_col) or "").strip(), (row.get(port_col) or "").strip()
+                if not ip or not port:
+                    errors.append(f"Row {row_number}: IP and port are required.")
+                elif not port.isdigit() or not 1 <= int(port) <= 65535:
+                    errors.append(f"Row {row_number}: port must be 1–65535.")
+                else:
+                    valid += 1
+        return valid, errors
+
     def import_csv(self, path: Path, replace: bool = False, save: bool = True) -> None:
+        valid, errors = self.preview_csv(path)
+        if errors:
+            raise ValueError("CSV validation failed:\n" + "\n".join(errors[:10]))
         imported: list[Device] = []
         with Path(path).open(newline="", encoding="utf-8-sig") as csv_file:
             reader = csv.DictReader(csv_file)
@@ -469,6 +518,13 @@ class DeviceStore:
                             source=(row.get(fields.get("source", "")) or "manual").strip() or "manual",
                             netbox_connection_id=(row.get(fields.get("netbox_connection_id", "")) or "").strip(),
                             netbox_device_id=(row.get(fields.get("netbox_device_id", "")) or "").strip(),
+                            group=(row.get(fields.get("group", "")) or "").strip(),
+                            tags=(row.get(fields.get("tags", "")) or "").strip(),
+                            notes=(row.get(fields.get("notes", "")) or "").strip(),
+                            favorite_profiles=(row.get(fields.get("favorite_profiles", "")) or "").strip(),
+                            putty_session=(row.get(fields.get("putty_session", "")) or "").strip(),
+                            last_success=(row.get(fields.get("last_success", "")) or "").strip(),
+                            reachability=(row.get(fields.get("reachability", "")) or "unknown").strip() or "unknown",
                         )
                     )
 
@@ -490,6 +546,13 @@ class DeviceStore:
                     source=current.source,
                     netbox_connection_id=current.netbox_connection_id,
                     netbox_device_id=current.netbox_device_id,
+                    group=device.group or current.group,
+                    tags=device.tags or current.tags,
+                    notes=device.notes or current.notes,
+                    favorite_profiles=device.favorite_profiles or current.favorite_profiles,
+                    putty_session=device.putty_session or current.putty_session,
+                    last_success=current.last_success,
+                    reachability=current.reachability,
                 )
                 self.save()
                 return
@@ -594,6 +657,13 @@ class DeviceStore:
                     source=current.source,
                     netbox_connection_id=current.netbox_connection_id,
                     netbox_device_id=current.netbox_device_id,
+                    group=new.group or current.group,
+                    tags=new.tags or current.tags,
+                    notes=new.notes or current.notes,
+                    favorite_profiles=new.favorite_profiles or current.favorite_profiles,
+                    putty_session=new.putty_session or current.putty_session,
+                    last_success=current.last_success,
+                    reachability=current.reachability,
                 )
                 self.save()
                 return
@@ -978,6 +1048,10 @@ class DeviceFormDialog(Toplevel):
         self.sysname = StringVar(value=device.sysname if device else "")
         self.ip = StringVar(value=device.ip if device else "")
         self.port = StringVar(value=device.port if device else "")
+        self.group = StringVar(value=device.group if device else "")
+        self.tags = StringVar(value=device.tags if device else "")
+        self.notes = StringVar(value=device.notes if device else "")
+        self.putty_session = StringVar(value=device.putty_session if device else "")
 
         frame = Frame(self, padx=16, pady=16)
         frame.pack(fill=BOTH, expand=True)
@@ -991,8 +1065,14 @@ class DeviceFormDialog(Toplevel):
         Label(frame, text="Port").grid(row=2, column=0, sticky="w", pady=(0, 6))
         Entry(frame, textvariable=self.port, width=40).grid(row=2, column=1, pady=(0, 6))
 
+        for row, label, variable in (
+            (3, "Group", self.group), (4, "Tags", self.tags), (5, "Notes", self.notes), (6, "PuTTY session", self.putty_session)
+        ):
+            Label(frame, text=label).grid(row=row, column=0, sticky="w", pady=(0, 6))
+            Entry(frame, textvariable=variable, width=40).grid(row=row, column=1, pady=(0, 6))
+
         actions = Frame(frame)
-        actions.grid(row=3, column=0, columnspan=2, sticky="e", pady=(12, 0))
+        actions.grid(row=7, column=0, columnspan=2, sticky="e", pady=(12, 0))
         Button(actions, text="Cancel", command=self.destroy).pack(side=RIGHT, padx=(8, 0))
         Button(actions, text="Save", command=self.save).pack(side=RIGHT)
 
@@ -1007,7 +1087,7 @@ class DeviceFormDialog(Toplevel):
         if not ip or not port:
             messagebox.showerror(APP_NAME, "IP and Port are required.")
             return
-        self.result = Device(ip=ip, sysname=sysname or ip, port=port)
+        self.result = Device(ip=ip, sysname=sysname or ip, port=port, group=self.group.get().strip(), tags=self.tags.get().strip(), notes=self.notes.get().strip(), putty_session=self.putty_session.get().strip())
         self.destroy()
 
 
@@ -1023,6 +1103,12 @@ class ChiragPuttyLauncherApp(Tk):
         self.configure(bg=APP_THEMES[self.profile_store.ui_theme]["bg"])
         self.setup_styles()
         self.search_var = StringVar()
+        self.protocol_filter_var = StringVar(value="All protocols")
+        self.source_filter_var = StringVar(value="All sources")
+        self.group_filter_var = StringVar(value="All groups")
+        self.tag_filter_var = StringVar(value="All tags")
+        self.sort_column = "sysname"
+        self.sort_reverse = False
         self.quick_ip_var = StringVar()
         self.quick_default_var = BooleanVar(value=True)
         self.quick_name_var = StringVar()
@@ -1081,6 +1167,25 @@ class ChiragPuttyLauncherApp(Tk):
         self.theme_var.set(self.profile_store.ui_theme)
         self.setup_styles()
         self.refresh_settings_summary()
+
+    def check_for_updates(self) -> None:
+        self.status.config(text="Checking GitHub Releases…")
+        threading.Thread(target=self._check_for_updates_worker, daemon=True).start()
+
+    def _check_for_updates_worker(self) -> None:
+        try:
+            response = requests.get(f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest", timeout=10)
+            if response.status_code == 404:
+                message = "No GitHub Release has been published yet."
+            else:
+                response.raise_for_status()
+                release = response.json()
+                version = str(release.get("tag_name", "")).lstrip("v")
+                url = release.get("html_url", f"https://github.com/{GITHUB_REPOSITORY}/releases")
+                message = f"Version {version} is available: {url}" if version and version != APP_VERSION else f"You are up to date ({APP_VERSION})."
+        except requests.RequestException as exc:
+            message = f"Could not check for updates: {exc}"
+        self.after(0, lambda: (self.status.config(text=message), messagebox.showinfo(APP_NAME, message)))
 
     def create_menu(self) -> None:
         menu_bar = Menu(self)
@@ -1168,6 +1273,15 @@ class ChiragPuttyLauncherApp(Tk):
         search = ttk.Entry(toolbar, textvariable=self.search_var, width=42)
         search.pack(side=LEFT)
         search.bind("<KeyRelease>", lambda _event: self.refresh_table())
+        for variable, values, width in (
+            (self.protocol_filter_var, ("All protocols", "SSH", "Telnet"), 13),
+            (self.source_filter_var, ("All sources", "manual", "netbox"), 12),
+            (self.group_filter_var, ("All groups",), 14),
+            (self.tag_filter_var, ("All tags",), 14),
+        ):
+            selector = ttk.Combobox(toolbar, textvariable=variable, values=values, state="readonly", width=width)
+            selector.pack(side=LEFT, padx=(8, 0))
+            selector.bind("<<ComboboxSelected>>", lambda _event: self.refresh_table())
         ttk.Button(toolbar, text="Import CSV", command=self.import_csv, style="Toolbar.TButton").pack(side=RIGHT)
         self.sync_button = ttk.Button(toolbar, text="Sync NetBox", command=self.sync_netbox, style="Accent.TButton", width=16)
         self.sync_button.pack(side=RIGHT, padx=(0, 8))
@@ -1177,11 +1291,11 @@ class ChiragPuttyLauncherApp(Tk):
         ttk.Label(toolbar, textvariable=self.sync_state_var, style="Muted.TLabel").pack(side=RIGHT, padx=(0, 10))
 
         columns = ("sysname", "ip", "port", "protocol")
-        self.tree = ttk.Treeview(inventory_tab, columns=columns, show="headings", selectmode="browse")
-        self.tree.heading("sysname", text="Sysname")
-        self.tree.heading("ip", text="IP")
-        self.tree.heading("port", text="Port")
-        self.tree.heading("protocol", text="Protocol")
+        self.tree = ttk.Treeview(inventory_tab, columns=columns, show="headings", selectmode="extended")
+        self.tree.heading("sysname", text="Sysname", command=lambda: self.set_sort("sysname"))
+        self.tree.heading("ip", text="IP", command=lambda: self.set_sort("ip"))
+        self.tree.heading("port", text="Port", command=lambda: self.set_sort("port"))
+        self.tree.heading("protocol", text="Protocol", command=lambda: self.set_sort("protocol"))
         self.tree.column("sysname", width=300)
         self.tree.column("ip", width=180)
         self.tree.column("port", width=90)
@@ -1197,6 +1311,8 @@ class ChiragPuttyLauncherApp(Tk):
         actions = ttk.Frame(inventory_tab, style="Workspace.TFrame")
         actions.pack(fill=X, pady=(10, 0))
         ttk.Button(actions, text="Launch PuTTY", command=self.launch_selected, style="Accent.TButton").pack(side=LEFT)
+        ttk.Button(actions, text="Launch selected", command=self.launch_all_selected, style="Toolbar.TButton").pack(side=LEFT, padx=(8, 0))
+        ttk.Button(actions, text="Toggle favorite", command=self.toggle_selected_favorite, style="Toolbar.TButton").pack(side=LEFT, padx=(8, 0))
         ttk.Button(actions, text="Delete device", command=self.delete_selected, style="Toolbar.TButton").pack(side=LEFT, padx=(8, 0))
         ttk.Button(actions, text="Close all PuTTY", command=self.close_all_putty_sessions, style="Danger.TButton").pack(side=LEFT, padx=(8, 0))
         self.status = ttk.Label(actions, text=self.status_text(), anchor="e", style="Muted.TLabel")
@@ -1245,6 +1361,8 @@ class ChiragPuttyLauncherApp(Tk):
         profile_settings.pack(fill=X, pady=(0, 10))
         ttk.Label(profile_settings, textvariable=self.settings_profile_var, style="Card.TLabel").pack(side=LEFT)
         ttk.Button(profile_settings, text="Manage profiles", command=self.open_profile_manager, style="Toolbar.TButton").pack(side=RIGHT)
+        ttk.Button(profile_settings, text="Restore backup", command=self.restore_settings_backup, style="Toolbar.TButton").pack(side=RIGHT, padx=(0, 8))
+        ttk.Button(profile_settings, text="Backup settings", command=self.backup_settings, style="Toolbar.TButton").pack(side=RIGHT, padx=(0, 8))
 
         netbox_settings = ttk.LabelFrame(settings_tab, text="  NetBox inventory  ", padding=(14, 9), style="Card.TLabelframe")
         netbox_settings.pack(fill=X, pady=(0, 10))
@@ -1269,6 +1387,7 @@ class ChiragPuttyLauncherApp(Tk):
         )
         self.theme_selector.pack(side=RIGHT)
         self.theme_selector.bind("<<ComboboxSelected>>", self.apply_selected_theme)
+        ttk.Button(appearance_settings, text="Check updates", command=self.check_for_updates, style="Toolbar.TButton").pack(side=RIGHT, padx=(0, 8))
 
         self.refresh_profiles()
 
@@ -1330,6 +1449,29 @@ class ChiragPuttyLauncherApp(Tk):
     def open_profile_manager(self) -> None:
         ProfileManagerDialog(self, self.profile_store)
         self.refresh_profiles()
+
+    def backup_settings(self) -> None:
+        path = filedialog.asksaveasfilename(title="Back up launcher settings", defaultextension=".json", filetypes=[("JSON files", "*.json")])
+        if not path:
+            return
+        try:
+            self.profile_store.export_backup(Path(path))
+            messagebox.showinfo(APP_NAME, "Settings backup created.")
+        except OSError as exc:
+            messagebox.showerror(APP_NAME, f"Could not create backup:\n{exc}")
+
+    def restore_settings_backup(self) -> None:
+        path = filedialog.askopenfilename(title="Restore launcher settings", filetypes=[("JSON files", "*.json")])
+        if not path or not messagebox.askyesno(APP_NAME, "Replace current launcher settings with this backup?"):
+            return
+        try:
+            self.profile_store.restore_backup(Path(path))
+            self.theme_var.set(self.profile_store.ui_theme)
+            self.setup_styles()
+            self.refresh_profiles()
+            messagebox.showinfo(APP_NAME, "Settings restored.")
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            messagebox.showerror(APP_NAME, f"Could not restore backup:\n{exc}")
 
     def open_netbox_connection_manager(self) -> None:
         NetBoxConnectionManagerDialog(self, self.profile_store)
@@ -1419,15 +1561,36 @@ class ChiragPuttyLauncherApp(Tk):
 
     def filtered_devices(self) -> list[Device]:
         query = self.search_var.get().strip().lower()
-        if not query:
-            return self.store.devices
-        return [
-            device
-            for device in self.store.devices
-            if query in device.ip.lower() or query in device.sysname.lower() or query in device.port.lower()
+        protocol = self.protocol_filter_var.get().lower()
+        source = self.source_filter_var.get().lower()
+        group = self.group_filter_var.get()
+        tag = self.tag_filter_var.get()
+        devices = [
+            device for device in self.store.devices
+            if (not query or any(query in value.lower() for value in (device.ip, device.sysname, device.port, device.group, device.tags, device.notes)))
+            and (protocol == "all protocols" or device.protocol == protocol)
+            and (source == "all sources" or device.source == source)
+            and (group == "All groups" or device.group == group)
+            and (tag == "All tags" or tag in {item.strip() for item in device.tags.split(",")})
         ]
+        return sorted(devices, key=lambda device: str(getattr(device, self.sort_column)).lower(), reverse=self.sort_reverse)
+
+    def set_sort(self, column: str) -> None:
+        self.sort_reverse = not self.sort_reverse if self.sort_column == column else False
+        self.sort_column = column
+        self.refresh_table()
 
     def refresh_table(self) -> None:
+        groups = sorted({device.group for device in self.store.devices if device.group})
+        tags = sorted({tag.strip() for device in self.store.devices for tag in device.tags.split(",") if tag.strip()})
+        self.group_filter_var.set(self.group_filter_var.get() if self.group_filter_var.get() in groups else "All groups")
+        self.tag_filter_var.set(self.tag_filter_var.get() if self.tag_filter_var.get() in tags else "All tags")
+        for widget in self.tree.master.winfo_children():
+            if isinstance(widget, ttk.Frame):
+                for child in widget.winfo_children():
+                    if isinstance(child, ttk.Combobox):
+                        if str(child.cget("textvariable")) == str(self.group_filter_var): child["values"] = ("All groups", *groups)
+                        if str(child.cget("textvariable")) == str(self.tag_filter_var): child["values"] = ("All tags", *tags)
         self.tree.delete(*self.tree.get_children())
         for index, device in enumerate(self.filtered_devices()):
             self.tree.insert("", END, iid=str(index), values=(device.sysname, device.ip, device.port, device.protocol.upper()))
@@ -1459,11 +1622,18 @@ class ChiragPuttyLauncherApp(Tk):
         self.recent_empty_label.config(text=message)
 
     def selected_device(self) -> Device | None:
+        devices = self.selected_devices()
+        return devices[0] if devices else None
+
+    def selected_devices(self) -> list[Device]:
         selected = self.tree.selection()
-        if not selected:
-            return None
-        values = self.tree.item(selected[0], "values")
-        return Device(ip=values[1], sysname=values[0], port=values[2])
+        devices: list[Device] = []
+        for item in selected:
+            values = self.tree.item(item, "values")
+            match = next((device for device in self.store.devices if device.ip == values[1] and device.port == values[2]), None)
+            if match:
+                devices.append(match)
+        return devices
 
     def selected_recent_device(self) -> Device | None:
         selected = self.recent_tree.selection()
@@ -1534,7 +1704,9 @@ class ChiragPuttyLauncherApp(Tk):
         if not profile:
             return
 
-        if device.protocol == "telnet":
+        if device.putty_session:
+            command = [profile.putty_path, "-load", device.putty_session]
+        elif device.protocol == "telnet":
             # Port 23 -> plain Telnet. Auto login is not sent because it is
             # unreliable against Telnet sessions; the user logs in manually.
             command = [profile.putty_path, "-telnet", device.ip, "-P", str(device.port)]
@@ -1559,6 +1731,8 @@ class ChiragPuttyLauncherApp(Tk):
 
         try:
             subprocess.Popen(command, shell=False)
+            device.last_success = datetime.now().isoformat(timespec="seconds")
+            self.store.save()
             self.profile_store.record_recent_device(device)
             self.refresh_recent_table()
             suffix = f" | Log: {log_path.name}" if log_path else ""
@@ -1597,6 +1771,29 @@ class ChiragPuttyLauncherApp(Tk):
             messagebox.showwarning(APP_NAME, "Select a device first.")
             return
         self.launch_device(device)
+
+    def launch_all_selected(self) -> None:
+        devices = self.selected_devices()
+        if not devices:
+            messagebox.showwarning(APP_NAME, "Select one or more devices first.")
+            return
+        for device in devices:
+            self.launch_device(device)
+
+    def toggle_selected_favorite(self) -> None:
+        device = self.selected_device()
+        if not device:
+            messagebox.showwarning(APP_NAME, "Select a device first.")
+            return
+        favorite_ids = {item for item in device.favorite_profiles.split(",") if item}
+        profile_id = self.current_profile().id
+        if profile_id in favorite_ids:
+            favorite_ids.remove(profile_id)
+        else:
+            favorite_ids.add(profile_id)
+        device.favorite_profiles = ",".join(sorted(favorite_ids))
+        self.store.save()
+        self.status.config(text=f"{'Added' if profile_id in favorite_ids else 'Removed'} {device.sysname} {'to' if profile_id in favorite_ids else 'from'} favorites.")
 
     def launch_recent_device(self) -> None:
         device = self.selected_recent_device()
@@ -1673,6 +1870,15 @@ class ChiragPuttyLauncherApp(Tk):
         if not path:
             return
         try:
+            valid, errors = self.store.preview_csv(Path(path))
+            if errors:
+                messagebox.showerror(APP_NAME, "Import preview found errors:\n\n" + "\n".join(errors[:10]))
+                return
+            if not valid:
+                messagebox.showwarning(APP_NAME, "Import preview found no valid device rows.")
+                return
+            if not messagebox.askyesno(APP_NAME, f"Import {valid} validated device{'s' if valid != 1 else ''}?"):
+                return
             self.store.import_csv(Path(path), replace=False)
             self.refresh_table()
             messagebox.showinfo(APP_NAME, "CSV imported.")
