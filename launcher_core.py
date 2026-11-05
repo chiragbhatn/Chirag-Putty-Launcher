@@ -207,8 +207,14 @@ class Device:
         return "telnet" if self.port.strip() == "23" else "ssh"
 
     @property
-    def key(self) -> str:
+    def endpoint(self) -> str:
         return f"{self.ip}:{self.port}"
+
+    @property
+    def key(self) -> str:
+        """Unique id for the UI. Rows sharing an IP and port (kept from 1.x lists) get #2, #3…"""
+        duplicate = getattr(self, "_dup", 0)
+        return f"{self.endpoint}#{duplicate + 1}" if duplicate else self.endpoint
 
     @property
     def kind(self) -> str:
@@ -692,15 +698,24 @@ class DeviceStore:
             self.load_errors = [str(exc)]
             return
         self.load_errors = errors
-        self.devices = self._dedupe(rows)
+        # Keep every row, even ones sharing an IP and port; they are numbered so each stays addressable.
+        self.devices = rows
+        self.number_duplicates()
+
+    def number_duplicates(self) -> None:
+        seen: dict[str, int] = {}
+        for device in self.devices:
+            count = seen.get(device.endpoint, 0)
+            device._dup = count
+            seen[device.endpoint] = count + 1
 
     @staticmethod
     def _dedupe(devices: Iterable[Device]) -> list[Device]:
         seen: set[str] = set()
         result: list[Device] = []
         for device in devices:
-            if device.key not in seen:
-                seen.add(device.key)
+            if device.endpoint not in seen:
+                seen.add(device.endpoint)
                 result.append(device)
         return result
 
@@ -764,9 +779,9 @@ class DeviceStore:
             rows, errors = self.read_csv(path)
         except ValueError as exc:
             return {"valid": 0, "new": 0, "existing": 0, "errors": [str(exc)], "sample": []}
-        existing_keys = {d.key for d in self.devices}
+        existing_endpoints = {d.endpoint for d in self.devices}
         unique = self._dedupe(rows)
-        new = [d for d in unique if d.key not in existing_keys]
+        new = [d for d in unique if d.endpoint not in existing_endpoints]
         return {
             "valid": len(rows),
             "new": len(new),
@@ -780,13 +795,14 @@ class DeviceStore:
         if errors:
             raise ValueError("CSV validation failed:\n" + "\n".join(errors[:10]))
         if replace:
-            self.devices = self._dedupe(rows)
+            self.devices = rows
             added = len(self.devices)
         else:
-            existing = {d.key for d in self.devices}
-            new = [d for d in self._dedupe(rows) if d.key not in existing]
+            existing = {d.endpoint for d in self.devices}
+            new = [d for d in self._dedupe(rows) if d.endpoint not in existing]
             self.devices.extend(new)
             added = len(new)
+        self.number_duplicates()
         if save:
             self.save()
         return added
@@ -837,10 +853,11 @@ class DeviceStore:
                       notes: str = "", putty_session: str = "") -> Device:
         """Replace a device's editable fields. Metadata such as source and timestamps is kept."""
         validate_endpoint(ip, port)
-        current = self.find(old_key)
-        new_key = f"{ip.strip()}:{port.strip()}"
-        if new_key != old_key and self.find(new_key):
-            raise ValueError(f"Another device already uses {new_key}.")
+        current = self.find(old_key) if old_key else None
+        endpoint = f"{ip.strip()}:{port.strip()}"
+        moved = current is None or current.endpoint != endpoint
+        if moved and any(d.endpoint == endpoint for d in self.devices if d is not current):
+            raise ValueError(f"Another device already uses {endpoint}.")
         if current is None:
             current = Device(ip=ip.strip(), sysname=sysname.strip() or ip.strip(), port=port.strip())
             self.devices.append(current)
@@ -850,6 +867,8 @@ class DeviceStore:
         current.tags = ",".join(split_list(tags))
         current.notes = notes.strip()
         current.putty_session = putty_session.strip()
+        if moved:
+            self.number_duplicates()
         self.save()
         return current
 
@@ -857,6 +876,7 @@ class DeviceStore:
         keys = {device_or_keys.key} if isinstance(device_or_keys, Device) else set(device_or_keys)
         before = len(self.devices)
         self.devices = [d for d in self.devices if d.key not in keys]
+        self.number_duplicates()
         self.save()
         return before - len(self.devices)
 
@@ -960,6 +980,7 @@ class DeviceStore:
                 continue
             retained.append(device)
         self.devices = retained
+        self.number_duplicates()
         self.save()
         return added, updated, removed
 

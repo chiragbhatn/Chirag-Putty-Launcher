@@ -723,6 +723,7 @@ function deviceHtml(d) {
   const logs = (S.logs || []).filter(l => l.ip === d.ip && l.port === d.port).slice(0, 5);
   const how = d.putty_session ? `Saved PuTTY session “${esc(d.putty_session)}”` : `${d.protocol === "telnet" ? "Telnet" : "SSH"} on port ${esc(d.port)}${d.protocol === "telnet" ? ". You sign in by hand on Telnet." : ""}`;
   const openLabel = d.putty_session ? "Open saved session" : d.protocol === "telnet" ? "Open Telnet session" : "Open SSH session";
+  const twins = S.devices.filter(x => x.ip === d.ip && x.port === d.port && x.key !== d.key).length;
   const groups = S.groups.map(g => g.name);
   const checkRows = diag ? `
       <div class="check"><i class="led ${diag.port.ok ? "up" : "down"}"></i><b>Port ${esc(d.port)}</b><span>${esc(diag.port.detail)}</span></div>
@@ -745,6 +746,7 @@ function deviceHtml(d) {
         <button class="icon-button" data-action="device-menu" title="More actions">${icon("more")}</button>
       </div>
       ${d.protocol === "ssh" && !d.putty_session && !profile.has_password ? `<p class="faint" style="margin:10px 0 0;font-size:12.5px">${esc(profile.name)} has no saved password, so PuTTY will ask you to sign in.</p>` : ""}
+      ${twins ? `<p class="faint" style="margin:10px 0 0;font-size:12.5px">${plural(twins, "other device")} in your list use${twins === 1 ? "s" : ""} the same IP address and port. Search for ${esc(d.ip)} to see ${twins === 1 ? "it" : "them"}.</p>` : ""}
     </div>
     <div class="ins-section">
       <h3>Connection check <button class="button" data-action="diagnose" ${busy ? "disabled" : ""} title="Ctrl+T">${icon("pulse")}<span>${busy ? "Checking…" : "Check now"}</span></button></h3>

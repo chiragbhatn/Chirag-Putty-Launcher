@@ -84,6 +84,21 @@ def legacy_and_damaged_device_files_load(root: Path):
 
 
 @test
+def rows_sharing_an_address_are_kept(root: Path):
+    path = root / "devices.csv"
+    path.write_text("ip,sysname,port,source\n10.5.5.5,old-name,22,manual\n10.5.5.5,new-name-acc,22,netbox\n10.6.6.6,x,22,manual\n", encoding="utf-8")
+    store = DeviceStore(path)
+    assert [d.key for d in store.devices] == ["10.5.5.5:22", "10.5.5.5:22#2", "10.6.6.6:22"]
+    store.set_group(["10.5.5.5:22#2"], "G")
+    assert store.find("10.5.5.5:22").group == "" and store.find("10.5.5.5:22#2").group == "G"
+    store.update_device("10.5.5.5:22#2", "10.5.5.5", "new-name-acc", "22", group="G2")  # same address, no false clash
+    assert store.find("10.5.5.5:22#2").group == "G2"
+    assert len(DeviceStore(path).devices) == 3, "saving must not drop rows that share an address"
+    store.delete(["10.5.5.5:22"])
+    assert [d.key for d in store.devices] == ["10.5.5.5:22", "10.6.6.6:22"] and store.devices[0].sysname == "new-name-acc"
+
+
+@test
 def export_csv_round_trip(root: Path):
     store = DeviceStore(root / "devices.csv")
     store.add_or_update(Device("10.0.0.9", "edge", "2222", group="Edge", tags="a,b", notes="n"))
@@ -530,9 +545,8 @@ def bridge_launch_quick_connect_and_failures(root: Path):
 @test
 def bridge_bulk_check_and_groups(root: Path):
     api, events = make_api(root)
-    shut = closed_port()
     for i in range(3):
-        api._store.add_or_update(Device("127.0.0.1", f"d{i}", str(shut + i)))
+        api._store.add_or_update(Device("127.0.0.1", f"d{i}", str(closed_port())))
     keys = [d.key for d in api._store.devices]
     assert api.check_devices(keys) == {"total": 3}
     assert wait_for(lambda: any(e == "check_done" for e, _ in events), 15)
