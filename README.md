@@ -1,55 +1,96 @@
 # Chirag Putty Launcher
 
-This is a standalone Windows desktop app for launching PuTTY sessions. It is separate from the Django app.
+A Windows desktop app for finding network devices and opening PuTTY sessions to them. Version 2 is a full redesign: a native window with a modern interface, built for inventories of thousands of switches.
 
-## What It Does
+## What it does
 
-- Saves multiple named connection profiles, each with TACACS username/password, PuTTY path, and logging preference.
-- Selects the profile to use from the main window before launching a device.
-- Imports CSV files with `hostname,ip,port` (the `hostname`/`sysname` column and column order are both accepted).
-- Searches devices.
-- The port from the CSV/entry is always used as-is (no forced port 23).
-- Protocol is chosen from the port: port `23` launches **Telnet**, any other port launches **SSH**.
-- For SSH, uses PuTTY's native username/password arguments for auto-login.
-- For Telnet, PuTTY is launched to the device and you log in manually (auto id/password is not reliable over Telnet).
-- Optional per-profile session-output logging creates timestamped local `.log` files through PuTTY.
-- Supports multiple NetBox URL/API-key connections and a manual `Sync NetBox` action.
-- Syncs active Huawei/Juniper devices whose hostname ends in `-acc`, `-dis`, or `-core`; the NetBox `access`, `distribution`, and `core` roles are a fallback when a hostname has no suffix.
-- Preserves ports on existing matching devices, uses port `22` for new NetBox devices, and only removes stale devices that were originally created by NetBox sync.
-- Shows `Sync NetBox !` when one or more configured NetBox connections fail; those connections are not cleaned up.
-- Right-click a device for **Edit** (a single 3-row form for sysname / IP / port) or **Delete**.
-- Quick launch defaults to SSH using port `22` and the IP as the sysname. Clear the Default checkbox to enter a custom sysname and port while keeping the IP editable.
-- Quick Launch recognizes an IP already in the inventory and launches that saved device rather than adding a duplicate.
+**Find and open devices**
+- One search box finds devices by hostname, IP, group, tag or note. Press Enter to open the top match.
+- Type an IP address that isn't in the list (optionally `ip:port`) and press Enter to connect straight away. It is saved as a new device.
+- Port 23 opens Telnet (you sign in by hand). Any other port opens SSH and signs in with the active profile's TACACS credentials. Devices can also use a saved PuTTY session.
+- Open several selected devices at once, or reopen anything from Recently opened.
+- Devices are colour coded by role, after fibre and copper cable jackets: yellow core, aqua distribution, blue access. The role comes from the `-core`, `-dis` or `-acc` hostname suffix, or from NetBox.
 
-## Run From Source
+**Organise**
+- Groups in the sidebar: create, rename and delete them, and drag devices onto a group to move them.
+- Favorites (Ctrl+D or the star on each row), tags and notes on every device.
+- Filter by role, protocol, reachability, source (added here or NetBox) and tag. Sort by any column.
+- Copy IP addresses or hostnames for one or many devices.
 
-```powershell
-cd desktop_launcher
-python device_launcher_app.py
-```
+**Check connections**
+- Check now: port test with the SSH banner, plus ping, for the selected device.
+- Check reachability for a whole list, group or selection, run in parallel in the background.
+- When a session opens, the launcher tests the port alongside PuTTY. If the device can't be reached, or PuTTY exits with an error, a notification appears and the device is marked.
 
-## Build EXE
+**Session logs**
+- With logging on in a profile, PuTTY writes a dated log of each session. The Session logs page lists them, shows the output with find-in-log, and opens them in Notepad or Explorer.
+
+**NetBox**
+- Several NetBox connections, each with its own filters: roles, manufacturers, sites, status and skipped models. Turn a connection off to leave it out of syncs.
+- Sync on demand (F5), on a schedule (every 15 minutes to once a day) and when the app opens.
+- Sync history records what was added, updated and removed, and why a connection failed.
+- Devices you added yourself are never removed by a sync, and connections that fail are left untouched.
+
+**Profiles and settings**
+- Several connection profiles; switch the active one from the sidebar (Ctrl+Shift+P).
+- Import and export profiles between PCs. Passwords are left out unless you include them.
+- Back up and restore all settings. Four themes: Slate, Midnight, Ocean and Graphite.
+- Check GitHub for a newer release.
+
+## Keyboard shortcuts
+
+| Action | Keys |
+| --- | --- |
+| Find a device or type an IP | Ctrl K |
+| Open the selected device / every selected device | Enter / Ctrl Enter |
+| Move through the list, extend the selection | ↑ ↓, Shift ↑ ↓ |
+| Select all shown | Ctrl A |
+| Copy IP address / hostname | Ctrl C / Ctrl Shift C |
+| Check connection | Ctrl T |
+| Favorite | Ctrl D |
+| Edit / delete device | F2 / Del |
+| Add a device / import a CSV | Ctrl N / Ctrl I |
+| Sync NetBox | F5 |
+| Switch profile | Ctrl Shift P |
+| Views: all, favorites, recent, logs, NetBox, settings | Ctrl 1 to 6 |
+| Close all PuTTY windows | Ctrl Shift Q |
+| All shortcuts | ? |
+
+## Install
+
+Run `ChiragPuttyLauncher_Setup_2.0.0.exe` from the GitHub release. It upgrades an existing 1.x install in place. The app needs the Microsoft Edge WebView2 Runtime, which Windows 11 already includes; the installer offers the download if it is missing.
+
+## Your data
+
+Everything is stored on your PC in `%APPDATA%\ChiragPuttyLauncher`:
+
+- `config.json`: profiles, NetBox connections, groups, history and preferences. Passwords and API tokens are encrypted with Windows DPAPI, so they only open on your Windows account.
+- `devices.csv`: the device list.
+- `Logs\`: session logs, unless a profile uses another folder.
+
+The first time version 2 starts, it copies your 1.x files to `config.before-v2.json` and `devices.before-v2.csv`.
+
+## Develop
 
 ```powershell
 cd desktop_launcher
 python -m pip install -r requirements-build.txt
-pyinstaller --noconsole --onefile --name ChiragPuttyLauncher device_launcher_app.py
+python device_launcher_app.py          # run the app
+python test_launcher.py                # offline tests (no PuTTY, no network devices)
 ```
 
-The EXE will be created at:
+Code layout:
 
-```text
-desktop_launcher\dist\ChiragPuttyLauncher.exe
+- `launcher_core.py`: storage, NetBox sync, diagnostics, PuTTY commands and session logs. No UI code.
+- `device_launcher_app.py`: the native window (pywebview) and `LauncherApi`, the bridge the UI calls.
+- `launcher_ui/`: the interface (HTML, CSS and JavaScript, no external libraries, works offline).
+- `dev_server.py`: serves the UI in a normal browser for development. Set `CHIRAG_LAUNCHER_HOME` to a test folder so your real data is untouched.
+
+Build the EXE and installer:
+
+```powershell
+pyinstaller --noconfirm ChiragPuttyLauncher_NetBox.spec
+& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" ChiragPuttyLauncher_NetBox_Setup.iss
 ```
 
-## Local Data
-
-The app stores its local config and imported device list under:
-
-```text
-%APPDATA%\ChiragPuttyLauncher
-```
-
-The password is protected with Windows DPAPI when running on Windows.
-
-Profiles and imported devices are saved separately, so the same device can be opened with any selected profile. When session logging is enabled for a profile, PuTTY writes a timestamped log file to that profile's configured log folder.
+The EXE is written to `dist\` and the installer to `installer_output\`.

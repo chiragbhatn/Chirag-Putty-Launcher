@@ -1,16 +1,18 @@
 # -*- mode: python ; coding: utf-8 -*-
+# Build: pyinstaller ChiragPuttyLauncher_NetBox.spec  ->  dist\ChiragPuttyLauncher_NetBox.exe
 
+ui_files = ["index.html", "styles.css", "app.js", "app.ico"]
 
 a = Analysis(
     ['device_launcher_app.py'],
     pathex=[],
     binaries=[],
-    datas=[],
-    hiddenimports=[],
+    datas=[(f"launcher_ui/{name}", "launcher_ui") for name in ui_files],
+    hiddenimports=["clr", "webview.platforms.winforms", "webview.platforms.edgechromium"],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=["tkinter", "dev_server", "test_launcher"],
     noarchive=False,
     optimize=0,
 )
@@ -35,4 +37,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon='launcher_ui/app.ico',
 )

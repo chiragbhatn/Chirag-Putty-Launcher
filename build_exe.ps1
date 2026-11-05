@@ -1,5 +1,7 @@
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 python -m pip install -r requirements-build.txt
-pyinstaller --noconsole --onefile --name ChiragPuttyLauncher device_launcher_app.py
-Write-Host "Built: $PSScriptRoot\dist\ChiragPuttyLauncher.exe"
+python test_launcher.py
+pyinstaller --noconfirm ChiragPuttyLauncher_NetBox.spec
+& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" ChiragPuttyLauncher_NetBox_Setup.iss
+Write-Host "Built: $PSScriptRoot\dist\ChiragPuttyLauncher_NetBox.exe and the installer in installer_output\"
