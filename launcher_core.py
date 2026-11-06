@@ -925,7 +925,7 @@ class DeviceStore:
         device.reachability = result.get("status", "unknown")
         device.last_checked = result.get("checked_at", now_iso())
         port_ms = (result.get("port") or {}).get("ms")
-        device.latency_ms = f"{port_ms:.0f}" if isinstance(port_ms, (int, float)) else ""
+        device.latency_ms = latency_value(port_ms) if isinstance(port_ms, (int, float)) else ""
         if save:
             self.save()
 
@@ -1192,6 +1192,20 @@ ANSI_RE = re.compile(r"\x1b(\[[0-?]*[ -/]*[@-~]|\][^\x07]*\x07|[()][A-Za-z0-9]|[
 TELNET_IAC_RE = re.compile(rb"\xff[\xfb-\xfe].|\xff\xfa.*?\xff\xf0|\xff.", re.S)
 
 
+def latency_text(ms: float | None) -> str:
+    """'under 1 ms' reads better than '0 ms' on fast links."""
+    if ms is None:
+        return ""
+    return "under 1 ms" if ms < 1 else f"{ms:.0f} ms"
+
+
+def latency_value(ms: float | None) -> str:
+    """Compact form stored on the device and shown in tooltips."""
+    if ms is None:
+        return ""
+    return "<1" if ms < 1 else f"{ms:.0f}"
+
+
 def ping(host: str, timeout_ms: int = 1000) -> dict:
     if sys.platform == "win32":
         command = ["ping", "-n", "1", "-w", str(int(timeout_ms)), host]
@@ -1204,10 +1218,12 @@ def ping(host: str, timeout_ms: int = 1000) -> dict:
         return {"ok": False, "ms": None, "detail": f"Ping could not run: {exc}"}
     output = result.stdout or ""
     replied = "ttl=" in output.lower()
-    match = re.search(r"time[=<]\s*([\d.]+)\s*ms", output, re.I)
-    ms = float(match.group(1)) if match else None
+    match = re.search(r"time([=<])\s*([\d.]+)\s*ms", output, re.I)
+    ms = float(match.group(2)) if match else None
+    if match and match.group(1) == "<":
+        ms = min(ms, 0.5)  # Windows prints time<1ms for sub-millisecond replies
     if replied:
-        return {"ok": True, "ms": ms, "detail": f"Reply in {ms:.0f} ms" if ms is not None else "Reply received"}
+        return {"ok": True, "ms": ms, "detail": f"Reply in {latency_text(ms)}" if ms is not None else "Reply received"}
     lowered = output.lower()
     if "could not find host" in lowered or "unknown host" in lowered:
         detail = "Host name could not be resolved"
@@ -1237,7 +1253,7 @@ def probe_port(host: str, port: int | str, timeout: float = 3.0, read_banner: bo
                     banner = clean_banner(sock.recv(512))
                 except (socket.timeout, OSError):
                     banner = ""
-            return {"ok": True, "ms": ms, "detail": f"Port {port} open in {ms:.0f} ms", "banner": banner}
+            return {"ok": True, "ms": ms, "detail": f"Port {port} open in {latency_text(ms)}", "banner": banner}
     except ConnectionRefusedError:
         detail = f"Port {port} refused the connection"
     except socket.timeout:

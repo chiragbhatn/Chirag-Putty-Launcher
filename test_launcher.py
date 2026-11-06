@@ -432,6 +432,12 @@ def session_logs(root: Path):
 
 
 @test
+def latency_wording(root: Path):
+    assert core.latency_text(0.3) == "under 1 ms" and core.latency_text(12.4) == "12 ms" and core.latency_text(None) == ""
+    assert core.latency_value(0.3) == "<1" and core.latency_value(7.6) == "8"
+
+
+@test
 def version_compare(root: Path):
     assert core.version_tuple("v2.10.0") > core.version_tuple("2.9.9")
     assert core.version_tuple("2.0.0") == core.version_tuple("2.0")[:2] + (0,)

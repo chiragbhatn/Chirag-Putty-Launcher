@@ -385,7 +385,7 @@ class LauncherApi:
                 if device:
                     device.reachability = "up" if result["ok"] else "down"
                     device.last_checked = core.now_iso()
-                    device.latency_ms = f"{result['ms']:.0f}" if result["ok"] else ""
+                    device.latency_ms = core.latency_value(result["ms"]) if result["ok"] else ""
                     if not result["ok"]:
                         device.last_failure = f"{core.now_iso()} {result['detail']}"
                     self._store.save()

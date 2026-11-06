@@ -4,11 +4,27 @@ A Windows desktop app for finding network devices and opening PuTTY sessions to 
 
 **[Download the latest version](https://github.com/chiragbhatn/Chirag-Putty-Launcher/releases/latest)**
 
+![The device list with a core switch selected and its connection check](docs/screenshots/cpl-devices.png)
+
+- [Screenshots](#screenshots)
 - [Features](#features)
 - [Keyboard shortcuts](#keyboard-shortcuts)
 - [Install](#install)
 - [Your data](#your-data)
 - [Develop](#develop)
+
+## Screenshots
+
+All screenshots use sample test devices.
+
+| | |
+| --- | --- |
+| ![Typing a new IP address shows a Connect row](docs/screenshots/cpl-quick-connect.png) | ![Four devices selected in the Midnight theme, with bulk actions](docs/screenshots/cpl-dark-bulk.png) |
+| **Quick connect:** type any IP address and press Enter. | **Bulk actions** in the Midnight theme. |
+| ![NetBox connections, automatic sync and sync history](docs/screenshots/cpl-netbox.png) | ![A session log with find-in-log highlighting, in the Graphite theme](docs/screenshots/cpl-logs.png) |
+| **NetBox** connections, schedule and sync history. | **Session logs** with find-in-log, in the Graphite theme. |
+| ![Connection profiles and the four themes](docs/screenshots/cpl-settings.png) | |
+| **Profiles and themes**, here in Ocean. | |
 
 ## Features
 

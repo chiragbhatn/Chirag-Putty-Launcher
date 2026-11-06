@@ -1231,7 +1231,7 @@ function renderNetbox() {
         <label class="switch"><input type="checkbox" data-setting="sync_on_startup" ${S.settings.sync_on_startup ? "checked" : ""}><i></i></label></div>
     </div>
 
-    <div class="section"><header><div><h2>Sync history</h2><p>The last ${nb.history.length || 40} syncs.</p></div></header>
+    <div class="section"><header><div><h2>Sync history</h2><p>${nb.history.length === 1 ? "The most recent sync." : `The last ${nb.history.length || 40} syncs.`}</p></div></header>
       ${nb.history.length ? `<table class="history"><thead><tr><th>When</th><th>Started by</th><th>Changes</th><th>Connections</th><th>Took</th></tr></thead><tbody>
         ${nb.history.map(h => {
           const failed = (h.connections || []).filter(c => !c.ok);
